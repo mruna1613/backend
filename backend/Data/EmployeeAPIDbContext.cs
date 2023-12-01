@@ -10,5 +10,7 @@ namespace backend.Data
         }
 
         public DbSet<EmployeeDetails> EmployeeDetails { get; set; }
+
+        public DbSet<LoginCred> LoginCreds { get; set; }
     }
 }

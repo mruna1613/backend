@@ -1,17 +1,22 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using backend.Entities;
 using backend.Data;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-//builder.Services.AddDbContext<EmployeeAPIDbContext>(options => options.UseInMemoryDatabase("EmployeesDb"));  
-builder.Services.AddDbContext<EmployeeAPIDbContext>(options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+// Configure DbContext with connection string
+builder.Services.AddDbContext<EmployeeAPIDbContext>(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+});
 
 var app = builder.Build();
 
@@ -21,9 +26,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-app.UseHttpsRedirection();
 
+app.UseHttpsRedirection();
 app.UseAuthorization();
+
+// Initialize the Common class with the DbContext
+Common.Initialize(app.Services.GetRequiredService<EmployeeAPIDbContext>());
 
 app.MapControllers();
 
