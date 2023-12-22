@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Microsoft.AspNetCore.Identity;
 using System.Data.SqlClient;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace backend.Models.Controllers
 {
@@ -27,7 +29,7 @@ namespace backend.Models.Controllers
                 connection.Open();
 
                 // Check if the user exists in the database
-                string query = "SELECT TOP 1 userid, email, city, password, status FROM ecohrms.userdata WHERE userid = @UserId";
+                string query = "SELECT TOP 1 EmpCode, Password, Salt, Algo, isactive FROM hrms_app.dbo.empCreds WHERE EmpCode = @UserId";
 
                 using (SqlCommand command = new SqlCommand(query, connection))
                 {
@@ -38,43 +40,24 @@ namespace backend.Models.Controllers
                         if (reader.Read())
                         {
                             // User is found, now verify the password
-                            var hashedPassword = reader["password"].ToString();
+                            var storedPassword = reader["Password"].ToString();
+                            var salt = reader["Salt"].ToString();
+                            var algorithm = reader["Algo"].ToString();
 
                             // Use PasswordHasher to verify the entered password against the stored hashed password
                             var passwordHasher = new PasswordHasher<object>();
-                            var result = passwordHasher.VerifyHashedPassword(null, hashedPassword, loginRequest.Password);
+                            var hashedPassword = HashPassword(loginRequest.Password, salt, algorithm);
+
+                            var result = passwordHasher.VerifyHashedPassword(null, storedPassword, hashedPassword);
 
                             if (result == PasswordVerificationResult.Success)
                             {
                                 // Passwords match, user is authenticated
                                 var userData = new UserData
                                 {
-                                    UserId = reader["userid"].ToString(),
-                                    Email = reader["email"].ToString(),
-                                    City = reader["city"].ToString(),
-                                    Status = "A"
+                                    UserId = reader["EmpCode"].ToString(),
+                                    Status = reader["isactive"].ToString()
                                 };
-
-                                // Close the data reader before executing the update command
-                                reader.Close();
-
-                                // Update the status to 'A' for active state
-                                string updateStatusQuery = "UPDATE ecohrms.userdata SET status = @Status WHERE userid = @UserId AND status = 'R'";
-                                using (SqlCommand updateCommand = new SqlCommand(updateStatusQuery, connection))
-                                {
-                                    updateCommand.Parameters.AddWithValue("@UserId", loginRequest.UserId);
-                                    updateCommand.Parameters.AddWithValue("@Status", "A");
-                                    updateCommand.ExecuteNonQuery();
-                                }
-
-                                // Update the status to 'A' for active state in ecohrms.RegistrationKeys table
-                                string updateRegistrationKeysQuery = "UPDATE ecohrms.RegistrationKeys SET status = @Status WHERE userid = @UserId AND status = 'R'";
-                                using (SqlCommand updateRegistrationKeysCommand = new SqlCommand(updateRegistrationKeysQuery, connection))
-                                {
-                                    updateRegistrationKeysCommand.Parameters.AddWithValue("@UserId", loginRequest.UserId);
-                                    updateRegistrationKeysCommand.Parameters.AddWithValue("@Status", "A");
-                                    updateRegistrationKeysCommand.ExecuteNonQuery();
-                                }
 
                                 // Continue with the rest of your code
 
@@ -102,60 +85,17 @@ namespace backend.Models.Controllers
 
             return Unauthorized(failedResponse);
         }
-    }
 
+        private string HashPassword(string password, string salt, string algorithm)
+        {
+            byte[] passwordBytes = Encoding.UTF8.GetBytes(password);
+            byte[] saltBytes = Convert.FromBase64String(salt);
+
+            using (var hasher = new HMACSHA256(saltBytes))
+            {
+                var hashedBytes = hasher.ComputeHash(passwordBytes);
+                return Convert.ToBase64String(hashedBytes);
+            }
+        }
+    }
 }
-
-
-public class LoginRequest
-    {
-        public string? UserId { get; set; }
-        public string? Password { get; set; }
-        public string? Registrationkey { get; set; }
-    }
-
-    public class UserData
-    {
-        public string? UserId { get; set; }
-        public string? Email { get; set; }
-        public string? Password { get; set; }
-        public string? City { get; set; }
-        public string? Status { get; set; }
-
-        public UserData()
-        {
-            UserId = string.Empty;
-            Email = string.Empty;
-            Password = string.Empty;
-        }
-    }
-
-    public class Startup
-    {
-        public void ConfigureServices(IServiceCollection services)
-        {
-            services.AddCors(options =>
-            {
-                options.AddPolicy("AllowAll",
-                    builder =>
-                    {
-                        builder.AllowAnyOrigin()
-                               .AllowAnyMethod()
-                               .AllowAnyHeader();
-                    });
-            });
-        }
-
-        public void Configure(IApplicationBuilder app)
-        {
-            app.UseCors("AllowAll");
-
-            app.UseRouting();
-
-            app.UseEndpoints(endpoints =>
-            {
-                endpoints.MapControllers();
-            });
-        }
-    }
-
